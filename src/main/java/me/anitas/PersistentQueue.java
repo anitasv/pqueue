@@ -18,28 +18,22 @@ public class PersistentQueue<E extends Serializable>  extends AbstractQueue<E> {
 
     private final Queue<ContiguousBlock<E>> contiguousBlockList;
 
-    private final AtomicReference<ContiguousBlock<E>> head;
-    private final AtomicReference<ContiguousBlock<E>> tail;
+    private final AtomicReference<ContiguousBlock<E>> tail = new AtomicReference<>();
 
     private final Object lock = new Object();
 
     private final PersistentQueueConfig config;
 
-    public PersistentQueue(PersistentQueueConfig config) {
+    public PersistentQueue(PersistentQueueConfig config, Class<E> clazz) throws IOException, ClassNotFoundException {
         this.config = config;
 
         this.contiguousBlockList = new ArrayBlockingQueue<>(config.getMaxShards());
-        this.head = new AtomicReference<>();
-        this.tail = new AtomicReference<>();
 
-        ContiguousBlock<E> val = new ContiguousBlock<>(config.getMaxShardCapacity());
-        this.head.set(val);
-        this.tail.set(val);
-
-        this.config.getExecutor().scheduleWithFixedDelay(this::storePeriodically,
-                config.getDelayWrite(),
-                config.getDelayWrite(),
-                TimeUnit.MILLISECONDS);
+        read(clazz);
+//        this.config.getExecutor().scheduleWithFixedDelay(this::storePeriodically,
+//                config.getDelayWrite(),
+//                config.getDelayWrite(),
+//                TimeUnit.MILLISECONDS);
     }
 
     public void storePeriodically() {
@@ -81,36 +75,34 @@ public class PersistentQueue<E extends Serializable>  extends AbstractQueue<E> {
 
     public E poll() {
         synchronized (lock) {
-            ContiguousBlock<E> currentHead = head.get();
+            ContiguousBlock<E> currentHead = contiguousBlockList.peek();
             E val = currentHead.poll();
             if (val != null) {
                 return val;
             } else {
-                ContiguousBlock<E> newHead = contiguousBlockList.peek();
-                if (newHead == null) {
+                if (contiguousBlockList.size() > 1) {
+                    contiguousBlockList.remove();
+                    return poll();
+                } else {
                     return null;
                 }
-                contiguousBlockList.remove();
-                head.set(newHead);
-                return poll();
             }
         }
     }
 
     public E peek() {
         synchronized (lock) {
-            ContiguousBlock<E> currentHead = head.get();
+            ContiguousBlock<E> currentHead = contiguousBlockList.peek();
             E val = currentHead.peek();
             if (val != null) {
                 return val;
             } else {
-                ContiguousBlock<E> newHead = contiguousBlockList.peek();
-                if (newHead == null) {
+                if (contiguousBlockList.size() > 1) {
+                    contiguousBlockList.remove();
+                    return peek();
+                } else {
                     return null;
                 }
-                contiguousBlockList.remove();
-                head.set(newHead);
-                return peek();
             }
         }
     }
@@ -118,23 +110,34 @@ public class PersistentQueue<E extends Serializable>  extends AbstractQueue<E> {
     public boolean read(Class<E> clazz) throws IOException, ClassNotFoundException {
         File file = new File(config.getControlFile());
         if (!file.exists()) {
+            System.out.println("No file to bootstrap");
+            ContiguousBlock last = new ContiguousBlock<>(config.getMaxShardCapacity());
+            contiguousBlockList.offer(last);
+            tail.set(last);
             return false;
         }
         FileInputStream fileInputStream = new FileInputStream(config.getControlFile());
         ObjectInputStream objectInputStream = new ObjectInputStream(fileInputStream);
         int numShards = objectInputStream.readInt();
 
-        head.set(null);
-        tail.set(null);
+        System.out.println("Number of shards: " + numShards);
         contiguousBlockList.clear();
 
+        ContiguousBlock<E> last = null;
         for (int i = 0; i < numShards; i++) {
             String fileName = (String) objectInputStream.readObject();
             File file2 = new File(fileName);
+            System.out.println("Parse : " + fileName);
             ContiguousBlock<E> current = new ContiguousBlock<E>(config.getMaxShardCapacity());
             current.read(file2, clazz);
             contiguousBlockList.offer(current);
+            last = current;
         }
+        if (last == null) {
+            last = new ContiguousBlock<>(config.getMaxShardCapacity());
+            contiguousBlockList.offer(last);
+        }
+        tail.set(last);
 
         objectInputStream.close();
         return true;
@@ -146,6 +149,7 @@ public class PersistentQueue<E extends Serializable>  extends AbstractQueue<E> {
 
         int blockSize = contiguousBlockList.size();
 
+        System.out.println("Block Size: " + blockSize);
         objectInputStream.writeInt(blockSize);
 
         int shardId = 0;
@@ -154,15 +158,17 @@ public class PersistentQueue<E extends Serializable>  extends AbstractQueue<E> {
             if (shardId > blockSize) {
                 return;
             }
-            String fileName = config.getControlFile()  + ".shard/" + shardId;
+            String fileName = config.getControlFile()  + "." + shardId + ".shard";
             objectInputStream.writeObject(fileName);
             contiguousBlock.persist(new File(fileName));
         }
-
-        if (shardId != blockSize) {
+        if (shardId < blockSize) {
+            System.out.printf("Shard Id: " + shardId);
+            objectInputStream.close();
             write();
-            return;
+        } else {
+            System.out.println("Shard Id: " + shardId);
+            objectInputStream.close();
         }
-        objectInputStream.close();
     }
 }

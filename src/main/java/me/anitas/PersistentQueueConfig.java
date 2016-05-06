@@ -18,4 +18,6 @@ public class PersistentQueueConfig {
     private final String controlFile;
 
     private final ScheduledExecutorService executor;
+
+    private final Class<?> clazz;
 }

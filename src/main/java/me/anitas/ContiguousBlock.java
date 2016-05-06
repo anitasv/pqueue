@@ -54,6 +54,7 @@ public class ContiguousBlock<E extends Serializable> extends AbstractQueue<E> {
     }
 
     void read(File file, Class<E> clazz) throws IOException, ClassNotFoundException {
+        System.out.println("Reading from file: " + file.getAbsolutePath());
         FileInputStream fileInputStream = new FileInputStream(file);
         ObjectInputStream inputStream = new ObjectInputStream(fileInputStream);
         List<E> arrayList = LightBytes.readFrom(clazz, inputStream);
@@ -64,6 +65,7 @@ public class ContiguousBlock<E extends Serializable> extends AbstractQueue<E> {
     }
 
     void persist(File file) throws IOException {
+        System.out.println("Writing to file: " + file.getAbsolutePath());
         if (changed.compareAndSet(true, false)) {
             FileOutputStream fileOutputStream = new FileOutputStream(file);
             ObjectOutputStream outputStream = new ObjectOutputStream(fileOutputStream);

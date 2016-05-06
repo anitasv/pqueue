@@ -1,23 +1,22 @@
 package me.anitas;
 
 import java.io.IOException;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 public class Sample {
 
     public static void main(String[] args) throws IOException, ClassNotFoundException {
 
+        ScheduledExecutorService executor = new ScheduledThreadPoolExecutor(2);
         PersistentQueue<Integer> persistentQueue = new PersistentQueue<>(PersistentQueueConfig.builder()
-                .maxShards(10)
+                .maxShards(1000)
                 .maxShardCapacity(20)
                 .controlFile("/home/anita/pqueue.ctrl")
                 .delayWrite(1000)
-                .executor(new ScheduledThreadPoolExecutor(2))
-                .build());
+                .executor(executor)
+                .build(), Integer.class);
 ;
-
-        persistentQueue.read(Integer.class);
-
         System.out.println(persistentQueue.size());
         for (int i = 0; i < 100; i++) {
             persistentQueue.offer(i);
@@ -31,5 +30,7 @@ public class Sample {
 
         System.out.println(persistentQueue.size());
         persistentQueue.write();
+
+        executor.shutdown();
     }
 }

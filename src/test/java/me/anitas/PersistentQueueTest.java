@@ -12,7 +12,7 @@ import static org.testng.Assert.assertNull;
 public class PersistentQueueTest {
 
     @Test
-    public void testSimple() throws IOException {
+    public void testSimple() throws IOException, ClassNotFoundException {
         File file = File.createTempFile("persistant", "Simple");
         file.delete();
 
@@ -22,7 +22,7 @@ public class PersistentQueueTest {
             .controlFile(file.getAbsolutePath())
             .delayWrite(1000)
             .executor(new ScheduledThreadPoolExecutor(2))
-            .build());
+            .build(), Integer.class);
 
         for (int i = 0; i < 100; i++) {
             persistentQueue.offer(i);
